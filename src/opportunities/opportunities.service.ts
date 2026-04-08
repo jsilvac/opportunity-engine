@@ -6,6 +6,7 @@ import { UpdateOpportunityDto } from './dto/update-opportunity.dto';
 import { ScoringConfig } from './scoring-config.entity';
 import { ProductsService } from '../products/products.service';
 import { ProductSignalService } from '../products/products-signal.service';
+import { MercadoLibreService } from '../data-sources/mercadolibre/ml.service';
 
 @Injectable()
 export class OpportunitiesService {
@@ -19,6 +20,7 @@ export class OpportunitiesService {
 
     private productsService: ProductsService,
     private productSignalService: ProductSignalService,
+      private mlService: MercadoLibreService,
   ) {}
 
   // ===============================
@@ -34,6 +36,7 @@ export class OpportunitiesService {
       skip,
       take: limit,
       order: { createdAt: 'DESC' },
+       relations: ['product'],
     });
 
     return {
@@ -54,11 +57,14 @@ export class OpportunitiesService {
     // 1️⃣ PRODUCTO
     const product = await this.productsService.findOrCreate(keyword, category);
 
-    // 2️⃣ SEÑALES (simulación por ahora)
-    const trendScore = Math.random() * 100;
-    const demandScore = Math.random() * 100;
-    const competitionScore = Math.random() * 100;
-    const marginScore = Math.random() * 100;
+    // 2️⃣ SEÑALES MERCADOLIBRE 
+    
+    const mlAnalysis = await this.mlService.analyzeKeyword(keyword);
+
+    const trendScore = mlAnalysis.estimatedDemand;
+    const demandScore = mlAnalysis.demandScore;
+    const competitionScore = mlAnalysis.competitionScore;
+    const marginScore = mlAnalysis.marginScore;
 
     // 3️⃣ GUARDAR SEÑALES
     await this.productSignalService.create({
@@ -107,7 +113,7 @@ export class OpportunitiesService {
   // ===============================
   // 🧠 LÓGICA DE NEGOCIO (PRIVADA)
   // ===============================
- private async calculateScores(
+  private async calculateScores(
   opportunity: Opportunity,
   scores: {
     trendScore: number;
@@ -115,52 +121,52 @@ export class OpportunitiesService {
     competitionScore: number;
     marginScore: number;
   }
-): Promise<Opportunity> {
+  ): Promise<Opportunity> {
 
-  // 1️⃣ Obtener configuración
-  let config = await this.scoringConfigRepository.findOneBy({ id: 1 });
+    // 1️⃣ Obtener configuración
+    let config = await this.scoringConfigRepository.findOneBy({ id: 1 });
 
-  // Si no existe, crear por defecto
-  if (!config) {
-    config = this.scoringConfigRepository.create({});
-    config = await this.scoringConfigRepository.save(config);
+    // Si no existe, crear por defecto
+    if (!config) {
+      config = this.scoringConfigRepository.create({});
+      config = await this.scoringConfigRepository.save(config);
+    }
+
+    // 2️⃣ Extraer scores desde parámetro (YA NO random aquí)
+    const {
+      trendScore,
+      demandScore,
+      competitionScore,
+      marginScore,
+    } = scores;
+
+    // 3️⃣ Calcular peso total
+    const totalWeight =
+      config.trendWeight +
+      config.demandWeight +
+      config.marginWeight +
+      config.competitionWeight;
+
+    // 4️⃣ Calcular score final
+    opportunity.overallScore =
+      (
+        trendScore * config.trendWeight +
+        demandScore * config.demandWeight +
+        marginScore * config.marginWeight -
+        competitionScore * config.competitionWeight
+      ) / totalWeight;
+
+    // 5️⃣ Decisión automática
+    if (opportunity.overallScore > config.highThreshold) {
+      opportunity.decision = 'HIGH';
+    } else if (opportunity.overallScore > config.testThreshold) {
+      opportunity.decision = 'TEST';
+    } else {
+      opportunity.decision = 'DISCARD';
+    }
+
+    return opportunity;
   }
-
-  // 2️⃣ Extraer scores desde parámetro (YA NO random aquí)
-  const {
-    trendScore,
-    demandScore,
-    competitionScore,
-    marginScore,
-  } = scores;
-
-  // 3️⃣ Calcular peso total
-  const totalWeight =
-    config.trendWeight +
-    config.demandWeight +
-    config.marginWeight +
-    config.competitionWeight;
-
-  // 4️⃣ Calcular score final
-  opportunity.overallScore =
-    (
-      trendScore * config.trendWeight +
-      demandScore * config.demandWeight +
-      marginScore * config.marginWeight -
-      competitionScore * config.competitionWeight
-    ) / totalWeight;
-
-  // 5️⃣ Decisión automática
-  if (opportunity.overallScore > config.highThreshold) {
-    opportunity.decision = 'HIGH';
-  } else if (opportunity.overallScore > config.testThreshold) {
-    opportunity.decision = 'TEST';
-  } else {
-    opportunity.decision = 'DISCARD';
-  }
-
-  return opportunity;
-}
 
    
 }
