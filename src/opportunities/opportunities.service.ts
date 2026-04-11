@@ -1,12 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+
 import { Opportunity } from './opportunity.entity';
 import { UpdateOpportunityDto } from './dto/update-opportunity.dto';
 import { ScoringConfig } from './scoring-config.entity';
+
 import { ProductsService } from '../products/products.service';
 import { ProductSignalService } from '../products/products-signal.service';
-import { MercadoLibreService } from '../data-sources/mercadolibre/ml.service';
 
 @Injectable()
 export class OpportunitiesService {
@@ -20,7 +21,6 @@ export class OpportunitiesService {
 
     private productsService: ProductsService,
     private productSignalService: ProductSignalService,
-      private mlService: MercadoLibreService,
   ) {}
 
   // ===============================
@@ -36,7 +36,7 @@ export class OpportunitiesService {
       skip,
       take: limit,
       order: { createdAt: 'DESC' },
-       relations: ['product'],
+      relations: ['product'],
     });
 
     return {
@@ -48,25 +48,23 @@ export class OpportunitiesService {
   }
 
   // ===============================
-  // 📌 CREAR CON SCORING AUTOMÁTICO
+  // 📌 CREAR (SIN LÓGICA EXTERNA)
   // ===============================
   async create(data: any) {
 
-    const { keyword, category } = data;
+    const {
+      keyword,
+      category,
+      trendScore,
+      demandScore,
+      competitionScore,
+      marginScore,
+    } = data;
 
-    // 1️⃣ PRODUCTO
+    // 1️⃣ Crear o buscar producto
     const product = await this.productsService.findOrCreate(keyword, category);
 
-    // 2️⃣ SEÑALES MERCADOLIBRE 
-    
-    const mlAnalysis = await this.mlService.analyzeKeyword(keyword);
-
-    const trendScore = mlAnalysis.estimatedDemand;
-    const demandScore = mlAnalysis.demandScore;
-    const competitionScore = mlAnalysis.competitionScore;
-    const marginScore = mlAnalysis.marginScore;
-
-    // 3️⃣ GUARDAR SEÑALES
+    // 2️⃣ Guardar señales (histórico)
     await this.productSignalService.create({
       product,
       trendScore,
@@ -75,22 +73,22 @@ export class OpportunitiesService {
       marginScore,
     });
 
-    // 4️⃣ CREAR OPORTUNIDAD VACÍA
+    // 3️⃣ Crear oportunidad base
     let opportunity = this.opportunityRepository.create({
       product,
-      overallScore:0,
+      overallScore: 0,
       decision: 'PENDING',
-    } as Partial<Opportunity>);
+    });
 
-    // 5️⃣ CALCULAR SCORE (le pasamos los valores)
+    // 4️⃣ Calcular score final
     opportunity = await this.calculateScores(opportunity, {
       trendScore,
       demandScore,
       competitionScore,
       marginScore,
-    }
-    );
+    });
 
+    // 5️⃣ Guardar
     return this.opportunityRepository.save(opportunity);
   }
 
@@ -111,49 +109,49 @@ export class OpportunitiesService {
   }
 
   // ===============================
-  // 🧠 LÓGICA DE NEGOCIO (PRIVADA)
+  // 🧠 SCORE FINAL (CORE DEL NEGOCIO)
   // ===============================
   private async calculateScores(
-  opportunity: Opportunity,
-  scores: {
-    trendScore: number;
-    demandScore: number;
-    competitionScore: number;
-    marginScore: number;
-  }
+    opportunity: Opportunity,
+    scores: {
+      trendScore: number;
+      demandScore: number;
+      competitionScore: number;
+      marginScore: number;
+    }
   ): Promise<Opportunity> {
 
-    // 1️⃣ Obtener configuración
+    // 1️⃣ Configuración dinámica
     let config = await this.scoringConfigRepository.findOneBy({ id: 1 });
 
-    // Si no existe, crear por defecto
     if (!config) {
       config = this.scoringConfigRepository.create({});
       config = await this.scoringConfigRepository.save(config);
     }
 
-    // 2️⃣ Extraer scores desde parámetro (YA NO random aquí)
-    const {
-      trendScore,
-      demandScore,
-      competitionScore,
-      marginScore,
-    } = scores;
+    // 2️⃣ Normalizar valores (0–100)
+    const normalize = (value: number) =>
+      Math.max(0, Math.min(100, value));
 
-    // 3️⃣ Calcular peso total
+    const trend = normalize(scores.trendScore);
+    const demand = normalize(scores.demandScore);
+    const competition = normalize(scores.competitionScore);
+    const margin = normalize(scores.marginScore);
+
+    // 3️⃣ Peso total (evita división por 0)
     const totalWeight =
       config.trendWeight +
       config.demandWeight +
       config.marginWeight +
-      config.competitionWeight;
+      config.competitionWeight || 1;
 
-    // 4️⃣ Calcular score final
+    // 4️⃣ Fórmula de negocio (MUY importante)
     opportunity.overallScore =
       (
-        trendScore * config.trendWeight +
-        demandScore * config.demandWeight +
-        marginScore * config.marginWeight -
-        competitionScore * config.competitionWeight
+        trend * config.trendWeight +
+        demand * config.demandWeight +
+        margin * config.marginWeight +
+        (100 - competition) * config.competitionWeight
       ) / totalWeight;
 
     // 5️⃣ Decisión automática
@@ -167,6 +165,4 @@ export class OpportunitiesService {
 
     return opportunity;
   }
-
-   
 }

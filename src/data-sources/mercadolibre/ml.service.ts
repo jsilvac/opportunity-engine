@@ -22,23 +22,50 @@ export class MercadoLibreService {
   // ===============================
   // 🔍 BUSCAR PRODUCTOS
   // ===============================
-  async searchProducts(
-    keyword: string,
-    limit = 50,
-  ): Promise<MLSearchResult> {
-    try {
-      const response = await axios.get(`${this.BASE_URL}/sites/${this.SITE_ID}/search`, {
-        headers: this.headers,
-        params: {
-          q: keyword,
-          limit,
-        },
-      });
-      return response.data as MLSearchResult;
-    } catch (error) {
-      this.logger.error(`Error buscando "${keyword}" en MercadoLibre`, error);
-      throw error;
-    }
+  // async searchProducts(
+  //   keyword: string,
+  //   limit = 50,
+  // ): Promise<MLSearchResult> {
+  //   try {
+  //     const response = await axios.get(`${this.BASE_URL}/sites/${this.SITE_ID}/search`, {
+  //       headers: {
+  //       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+  //       'Accept': 'application/json',
+  //       'Accept-Language': 'es-CL,es;q=0.9',
+  //       },
+  //       params: {
+  //         q: keyword,
+  //         limit: 50,
+  //       },
+  //     });
+  //     return response.data as MLSearchResult;
+  //   } catch (error) {
+  //     this.logger.error(`Error buscando "${keyword}" en MercadoLibre`, error);
+  //     throw error;
+  //   }
+  // }
+
+  async searchProducts(keyword: string, limit = 50): Promise<MLSearchResult> {
+  try {
+    const response = await axios.get(`${this.BASE_URL}/sites/${this.SITE_ID}/search`, {
+      headers: this.headers,
+      params: {
+        q: keyword,
+        limit,
+      },
+    });
+
+    return response.data as MLSearchResult;
+
+  } catch (error) {
+    this.logger.warn(`⚠️ ML falló para "${keyword}"`);
+
+    return {
+      query: keyword,
+      paging: { total: 0, offset: 0, limit: 0 },
+      results: [],
+    };
+  }
   }
 
   // ===============================

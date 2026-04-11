@@ -2,14 +2,22 @@ import { Body, Controller, Get, Post, Patch, Param, ParseIntPipe, Delete, Query 
 import { OpportunitiesService } from './opportunities.service';
 import { CreateOpportunityDto } from './dto/create-opportunity.dto';
 import { UpdateOpportunityDto } from './dto/update-opportunity.dto';
+import { OpportunityGeneratorService } from './opportunity-generator.service';
 
 @Controller('opportunities')
 export class OpportunitiesController {
 
-  constructor(private readonly opportunitiesService: OpportunitiesService) {}
+  constructor(private readonly opportunitiesService: OpportunitiesService,
+      private readonly generatorService: OpportunityGeneratorService, 
+  ) {}
+
+  @Get('generate')
+  generate(@Query('q') keyword: string) {
+    return this.generatorService.generateFromKeyword(keyword);
+  }
 
   @Get()
-findAll(
+  findAll(
   @Query('page') page?: string,
   @Query('limit') limit?: string,
   @Query('active') active?: string,) {

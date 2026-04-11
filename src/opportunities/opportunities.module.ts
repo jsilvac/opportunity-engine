@@ -6,15 +6,21 @@ import { OpportunitiesService } from './opportunities.service';
 import { ScoringConfig } from './scoring-config.entity';
 import { ProductsModule } from 'src/products/products.module';
 import { DataSourcesModule } from 'src/data-sources/data-sources.module';
+import { OpportunityGeneratorService } from './opportunity-generator.service';
+import { GoogleTrendsModule } from 'src/data-sources/google-trends/google-trends.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([Opportunity, ScoringConfig]),
     ProductsModule,
-    DataSourcesModule, //
+    DataSourcesModule,
+    GoogleTrendsModule,
   ],
   exports: [TypeOrmModule],
   controllers: [OpportunitiesController],
-  providers: [OpportunitiesService],
+  providers: [
+    OpportunitiesService,
+    OpportunityGeneratorService,
+  ],
 })
 export class OpportunitiesModule {}
